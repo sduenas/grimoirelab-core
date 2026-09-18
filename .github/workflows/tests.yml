@@ -46,6 +46,48 @@ jobs:
     - name: Install poetry
       run: |
         pipx install poetry
+    - name: Capture uWSGI failure details
+      continue-on-error: true
+      run: |
+        set +e
+        python -m pip wheel \
+          --no-cache-dir \
+          --no-binary uwsgi \
+          --use-pep517 \
+          "uwsgi==2.0.31" \
+          -v 2>&1 | tee uwsgi-build-before-system-deps.log
+        status=${PIPESTATUS[0]}
+
+        echo "uWSGI build exit code: $status"
+        echo "::group::Compiler and linker errors"
+        grep -Ei \
+          'error:|fatal error:|undefined reference|cannot find|ld returned|error linking|collect2' \
+          uwsgi-build-before-system-deps.log || true
+        echo "::endgroup::"
+
+        echo "::group::Relevant system packages before fix"
+        dpkg-query -W -f='${Package} ${Version}\n' \
+          build-essential gcc libc6-dev libpcre3-dev libssl-dev \
+          zlib1g-dev libxml2-dev libxslt1-dev 2>&1 || true
+        echo "::endgroup::"
+
+        exit 0
+
+    - name: Install native build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          libpcre3-dev \
+          libssl-dev \
+          zlib1g-dev \
+          libxml2-dev \
+          libxslt1-dev
+    - name: Debug uWSGI build
+      run: |
+        poetry --version
+        poetry show uwsgi || true
+        python -m pip wheel --no-cache-dir --use-pep517 "uwsgi==2.0.31" -v
     - name: Install dependencies
       run: |
         poetry install -vvv
